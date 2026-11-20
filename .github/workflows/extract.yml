@@ -4,39 +4,50 @@ jobs:
   extract:
     runs-on: macos-latest
     steps:
-      - name: Bundle Accessibility Inspector with Required Frameworks
+      - name: Bundle Accessibility Inspector with All Dependencies
         run: |
           XCODE_CONTENTS=$(dirname "$(xcode-select -p)")
-          echo "Using Xcode at: $XCODE_CONTENTS"
-          mkdir -p bundle/Applications bundle/SharedFrameworks bundle/Frameworks
+          mkdir -p bundle/Applications
           cp -R "$XCODE_CONTENTS/Applications/Accessibility Inspector.app" bundle/Applications/
 
           python3 - "$XCODE_CONTENTS" << 'EOF'
           import os, subprocess, shutil, sys
 
           xcode = sys.argv[1]
-          search_dirs = [
-              os.path.join(xcode, "SharedFrameworks"),
-              os.path.join(xcode, "Frameworks"),
+          rel_search_dirs = [
+              "SharedFrameworks",
+              "Frameworks",
+              "Developer/Library/PrivateFrameworks",
+              "Developer/Library/Frameworks",
           ]
-          queue = ["bundle/Applications/Accessibility Inspector.app/Contents/MacOS/Accessibility Inspector"]
-          seen = set()
 
+          queue = []
+          for root, _, files in os.walk("bundle/Applications/Accessibility Inspector.app"):
+              for f in files:
+                  p = os.path.join(root, f)
+                  if os.path.isfile(p) and not os.path.islink(p) and os.access(p, os.X_OK):
+                      queue.append(p)
+
+          seen = set()
           while queue:
               bin_path = queue.pop(0)
               if bin_path in seen or not os.path.exists(bin_path):
                   continue
               seen.add(bin_path)
-              out = subprocess.check_output(["otool", "-L", bin_path], text=True)
+              try:
+                  out = subprocess.check_output(["otool", "-L", bin_path], text=True, stderr=subprocess.DEVNULL)
+              except subprocess.CalledProcessError:
+                  continue
               for line in out.splitlines()[1:]:
                   dep = line.strip().split(" ")[0]
                   if dep.startswith("@rpath/"):
                       rel = dep[len("@rpath/"):]
                       fw_name = rel.split("/")[0]
-                      for sdir in search_dirs:
-                          src = os.path.join(sdir, fw_name)
+                      for rdir in rel_search_dirs:
+                          src = os.path.join(xcode, rdir, fw_name)
                           if os.path.exists(src):
-                              dst_dir = os.path.join("bundle", os.path.basename(sdir))
+                              dst_dir = os.path.join("bundle", rdir)
+                              os.makedirs(dst_dir, exist_ok=True)
                               dst = os.path.join(dst_dir, fw_name)
                               if not os.path.exists(dst):
                                   if os.path.isdir(src):
