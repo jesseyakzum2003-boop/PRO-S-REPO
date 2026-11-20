@@ -1,0 +1,16 @@
+name: Grab Accessibility Inspector
+on: workflow_dispatch
+jobs:
+  extract:
+    runs-on: macos-latest
+    steps:
+      - name: Zip Accessibility Inspector
+        run: |
+          APP_PATH=$(find /Applications -maxdepth 4 -name "Accessibility Inspector.app" | head -n 1)
+          echo "Found at: $APP_PATH"
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "AccessibilityInspector.zip"
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AccessibilityInspector
+          path: AccessibilityInspector.zip
