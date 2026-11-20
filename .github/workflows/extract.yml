@@ -6,11 +6,11 @@ jobs:
     steps:
       - name: Bundle Accessibility Inspector with Required Frameworks
         run: |
-          XCODE_CONTENTS=$(find /Applications -maxdepth 3 -name "Accessibility Inspector.app" | head -n 1 | sed 's|/Applications/Accessibility Inspector.app||')
+          XCODE_CONTENTS=$(dirname "$(xcode-select -p)")
+          echo "Using Xcode at: $XCODE_CONTENTS"
           mkdir -p bundle/Applications bundle/SharedFrameworks bundle/Frameworks
           cp -R "$XCODE_CONTENTS/Applications/Accessibility Inspector.app" bundle/Applications/
 
-          # Copy Accessibility & Audit frameworks plus any recursive @rpath dependencies
           python3 - "$XCODE_CONTENTS" << 'EOF'
           import os, subprocess, shutil, sys
 
@@ -19,7 +19,7 @@ jobs:
               os.path.join(xcode, "SharedFrameworks"),
               os.path.join(xcode, "Frameworks"),
           ]
-          queue = [os.path.join("bundle/Applications/Accessibility Inspector.app/Contents/MacOS/Accessibility Inspector")]
+          queue = ["bundle/Applications/Accessibility Inspector.app/Contents/MacOS/Accessibility Inspector"]
           seen = set()
 
           while queue:
@@ -39,7 +39,10 @@ jobs:
                               dst_dir = os.path.join("bundle", os.path.basename(sdir))
                               dst = os.path.join(dst_dir, fw_name)
                               if not os.path.exists(dst):
-                                  shutil.copytree(src, dst, symlinks=True)
+                                  if os.path.isdir(src):
+                                      shutil.copytree(src, dst, symlinks=True)
+                                  else:
+                                      shutil.copy2(src, dst)
                               queue.append(os.path.join(dst_dir, rel))
                               break
           EOF
