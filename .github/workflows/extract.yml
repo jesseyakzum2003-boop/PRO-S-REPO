@@ -4,13 +4,50 @@ jobs:
   extract:
     runs-on: macos-latest
     steps:
-      - name: Zip Accessibility Inspector
+      - name: Bundle Accessibility Inspector with Required Frameworks
         run: |
-          APP_PATH=$(find /Applications -maxdepth 4 -name "Accessibility Inspector.app" | head -n 1)
-          echo "Found at: $APP_PATH"
-          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "AccessibilityInspector.zip"
+          XCODE_CONTENTS=$(find /Applications -maxdepth 3 -name "Accessibility Inspector.app" | head -n 1 | sed 's|/Applications/Accessibility Inspector.app||')
+          mkdir -p bundle/Applications bundle/SharedFrameworks bundle/Frameworks
+          cp -R "$XCODE_CONTENTS/Applications/Accessibility Inspector.app" bundle/Applications/
+
+          # Copy Accessibility & Audit frameworks plus any recursive @rpath dependencies
+          python3 - "$XCODE_CONTENTS" << 'EOF'
+          import os, subprocess, shutil, sys
+
+          xcode = sys.argv[1]
+          search_dirs = [
+              os.path.join(xcode, "SharedFrameworks"),
+              os.path.join(xcode, "Frameworks"),
+          ]
+          queue = [os.path.join("bundle/Applications/Accessibility Inspector.app/Contents/MacOS/Accessibility Inspector")]
+          seen = set()
+
+          while queue:
+              bin_path = queue.pop(0)
+              if bin_path in seen or not os.path.exists(bin_path):
+                  continue
+              seen.add(bin_path)
+              out = subprocess.check_output(["otool", "-L", bin_path], text=True)
+              for line in out.splitlines()[1:]:
+                  dep = line.strip().split(" ")[0]
+                  if dep.startswith("@rpath/"):
+                      rel = dep[len("@rpath/"):]
+                      fw_name = rel.split("/")[0]
+                      for sdir in search_dirs:
+                          src = os.path.join(sdir, fw_name)
+                          if os.path.exists(src):
+                              dst_dir = os.path.join("bundle", os.path.basename(sdir))
+                              dst = os.path.join(dst_dir, fw_name)
+                              if not os.path.exists(dst):
+                                  shutil.copytree(src, dst, symlinks=True)
+                              queue.append(os.path.join(dst_dir, rel))
+                              break
+          EOF
+
+          ditto -c -k --sequesterRsrc --keepParent bundle "AccessibilityInspectorBundle.zip"
+
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AccessibilityInspector
-          path: AccessibilityInspector.zip
+          name: AccessibilityInspectorBundle
+          path: AccessibilityInspectorBundle.zip
