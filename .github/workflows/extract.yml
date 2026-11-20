@@ -15,11 +15,19 @@ jobs:
 
           xcode = sys.argv[1]
           rel_search_dirs = [
+              "",
               "SharedFrameworks",
               "Frameworks",
               "Developer/Library/PrivateFrameworks",
               "Developer/Library/Frameworks",
           ]
+
+          def get_bundle_root(rel_path):
+              parts = rel_path.split("/")
+              for i, part in enumerate(parts):
+                  if part.endswith(".framework") or part.endswith(".dylib"):
+                      return "/".join(parts[:i+1])
+              return parts[0]
 
           queue = []
           for root, _, files in os.walk("bundle/Applications/Accessibility Inspector.app"):
@@ -42,19 +50,19 @@ jobs:
                   dep = line.strip().split(" ")[0]
                   if dep.startswith("@rpath/"):
                       rel = dep[len("@rpath/"):]
-                      fw_name = rel.split("/")[0]
+                      fw_rel = get_bundle_root(rel)
                       for rdir in rel_search_dirs:
-                          src = os.path.join(xcode, rdir, fw_name)
+                          src = os.path.join(xcode, rdir, fw_rel) if rdir else os.path.join(xcode, fw_rel)
                           if os.path.exists(src):
-                              dst_dir = os.path.join("bundle", rdir)
-                              os.makedirs(dst_dir, exist_ok=True)
-                              dst = os.path.join(dst_dir, fw_name)
+                              dst = os.path.join("bundle", rdir, fw_rel) if rdir else os.path.join("bundle", fw_rel)
+                              os.makedirs(os.path.dirname(dst), exist_ok=True)
                               if not os.path.exists(dst):
                                   if os.path.isdir(src):
                                       shutil.copytree(src, dst, symlinks=True)
                                   else:
                                       shutil.copy2(src, dst)
-                              queue.append(os.path.join(dst_dir, rel))
+                              bin_dst = os.path.join("bundle", rdir, rel) if rdir else os.path.join("bundle", rel)
+                              queue.append(bin_dst)
                               break
           EOF
 
